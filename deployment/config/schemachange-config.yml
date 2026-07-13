@@ -4,5 +4,8 @@
 
 log_level: INFO
 
+# Required for git_branch / git_repository variables in SQL migrations
+jinja: true
+
 # Match the custom versioning convention documented in README.md
 version_number_validation_regex: "^\\d+\\.\\d+\\.\\d+$"

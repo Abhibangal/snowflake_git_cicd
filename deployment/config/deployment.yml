@@ -21,6 +21,10 @@ git:
 
   repository_name: CONFIG_DB.SECURITY_SCH.CICD_GIT_REPO
 
+  branch:
+    DEV: dev
+    PROD: main
+
 # ==========================================================
 # SchemaChange
 # ==========================================================
