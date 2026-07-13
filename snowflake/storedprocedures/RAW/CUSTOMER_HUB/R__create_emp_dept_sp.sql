@@ -11,7 +11,7 @@ PACKAGES = ('snowflake-snowpark-python')
 IMPORTS = (
     '@{{ git_repository }}/branches/{{ git_branch }}/snowflake/snowpark/RAW/CUSTOMER_HUB/EMP_DEPT_SP/src/main.py'
 )
-HANDLER = 'run'
+HANDLER = 'main.run'
 EXECUTE AS OWNER;
 
 GRANT OWNERSHIP ON PROCEDURE EMP_DEPT_SP()
