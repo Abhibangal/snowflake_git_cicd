@@ -42,10 +42,26 @@ jobs:
           pip install -r requirements.txt
 
       - name: Create Private Key
+        env:
+          SNOWFLAKE_PRIVATE_KEY: ${{ secrets.SNOWFLAKE_PRIVATE_KEY }}
+          SNOWFLAKE_PRIVATE_KEY_BASE64: ${{ secrets.SNOWFLAKE_PRIVATE_KEY_BASE64 }}
         shell: bash
         run: |
-          echo "${{ secrets.SNOWFLAKE_PRIVATE_KEY }}" > private_key.pem
+          if [ -n "$SNOWFLAKE_PRIVATE_KEY_BASE64" ]; then
+            echo "$SNOWFLAKE_PRIVATE_KEY_BASE64" | base64 -d > private_key.pem
+          elif [ -n "$SNOWFLAKE_PRIVATE_KEY" ]; then
+            printf '%s' "$SNOWFLAKE_PRIVATE_KEY" > private_key.pem
+          else
+            echo "::error::Missing SNOWFLAKE_PRIVATE_KEY or SNOWFLAKE_PRIVATE_KEY_BASE64 secret."
+            exit 1
+          fi
+
           chmod 600 private_key.pem
+
+          if ! grep -q "BEGIN.*PRIVATE KEY" private_key.pem; then
+            echo "::error::Private key is malformed. Paste the full PEM with line breaks, or store a base64-encoded key as SNOWFLAKE_PRIVATE_KEY_BASE64."
+            exit 1
+          fi
 
       - name: Deploy Snowflake
         env:
