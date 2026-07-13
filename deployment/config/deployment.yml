@@ -1,0 +1,78 @@
+# ==========================================================
+# Snowflake Connection
+# ==========================================================
+
+snowflake:
+
+  account: ${SNOWFLAKE_ACCOUNT}
+  user: ${SNOWFLAKE_USER}
+
+  role: CICD_DEPLOY_ROLE
+  warehouse: CICD_DEPLOY_WH
+
+  private_key_path: ${SNOWFLAKE_PRIVATE_KEY_PATH}
+  private_key_passphrase: ${SNOWFLAKE_PRIVATE_KEY_PASSPHRASE}
+
+# ==========================================================
+# Snowflake Git Repository
+# ==========================================================
+
+git:
+
+  repository_name: MY_GIT_REPOSITORY
+
+# ==========================================================
+# SchemaChange
+# ==========================================================
+
+schemachange:
+
+  root_folder: snowflake
+
+  history_table:
+    DEV: DEV_ADMIN.SCHEMACHANGE.CHANGE_HISTORY
+    PROD: PROD_ADMIN.SCHEMACHANGE.CHANGE_HISTORY
+
+  create_change_history_table: true
+  autocommit: true
+  dry_run: false
+
+# ==========================================================
+# Deployment Order
+# Object types are deployed in this order for each target.
+# Folder structure drives database/schema mapping:
+#   snowflake/<object_type>/<database>/<schema>/*.sql
+# Snowflake database name: {ENV}_{database}
+# Snowflake schema name: {schema}
+# ==========================================================
+
+deployment_order:
+
+  - file_formats
+  - stages
+  - tables
+  - streams
+  - views
+  - functions
+  - storedprocedures
+  - dynamic_tables
+  - tasks
+  - pipes
+  - snowpark
+
+# ==========================================================
+# Logging
+# ==========================================================
+
+logging:
+
+  level: INFO
+
+# ==========================================================
+# Features
+# ==========================================================
+
+features:
+
+  validate_before_deploy: true
+  fetch_git_repository: true
