@@ -19,7 +19,7 @@ snowflake:
 
 git:
 
-  repository_name: MY_GIT_REPOSITORY
+  repository_name: CONFIG_DB.SECURITY_SCH.CICD_GIT_REPO
 
 # ==========================================================
 # SchemaChange
@@ -30,8 +30,8 @@ schemachange:
   root_folder: snowflake
 
   history_table:
-    DEV: DEV_ADMIN.SCHEMACHANGE.CHANGE_HISTORY
-    PROD: PROD_ADMIN.SCHEMACHANGE.CHANGE_HISTORY
+    DEV: CONFIG_DB.SCHEMACHANGE.DEV_CHANGE_HISTORY
+    PROD: CONFIG_DB.SCHEMACHANGE.PROD_CHANGE_HISTORY
 
   create_change_history_table: true
   autocommit: true
