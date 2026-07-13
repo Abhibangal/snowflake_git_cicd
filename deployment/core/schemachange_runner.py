@@ -6,10 +6,30 @@ Execute SchemaChange per database/schema folder target.
 """
 
 import os
+import shutil
 import subprocess
 import sys
+from pathlib import Path
 
 from deployment.core.schema_discovery import SchemaDiscovery
+
+
+def _schemachange_executable() -> str:
+    """Return the schemachange CLI path installed in the current environment."""
+
+    executable = shutil.which("schemachange")
+
+    if executable:
+        return executable
+
+    venv_executable = Path(sys.executable).parent / "schemachange"
+
+    if venv_executable.exists():
+        return str(venv_executable)
+
+    raise RuntimeError(
+        "schemachange CLI not found. Install requirements.txt before deploying."
+    )
 
 
 class SchemaChangeRunner:
@@ -115,9 +135,7 @@ class SchemaChangeRunner:
         snowflake_settings = self.deployment_config["snowflake"]
 
         command = [
-            sys.executable,
-            "-m",
-            "schemachange",
+            _schemachange_executable(),
             "deploy",
             "-f",
             root_folder,
