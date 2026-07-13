@@ -1,0 +1,5 @@
+# Placeholder Snowpark configuration for EMP_DEPT_SP.
+# Add procedure-specific settings here (e.g. defaults, feature flags).
+
+procedure_name: EMP_DEPT_SP
+source_system: CUSTOMER_HUB
