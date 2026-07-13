@@ -23,6 +23,7 @@ class SnowflakeConnection:
 
         private_key_path = self.config["snowflake"]["private_key_path"]
         passphrase = self.config["snowflake"].get("private_key_passphrase")
+        passphrase = passphrase.strip() if isinstance(passphrase, str) else passphrase
 
         password = passphrase.encode() if passphrase else None
 
