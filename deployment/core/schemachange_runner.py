@@ -39,6 +39,8 @@ class SchemaChangeRunner:
     CONNECTIONS_FILE = "connections.toml"
     CONNECTION_NAME = "cicd"
 
+    GIT_DEPENDENT_OBJECT_TYPES = frozenset({"storedprocedures", "snowpark"})
+
     def __init__(
         self,
         deployment_config,
@@ -46,12 +48,14 @@ class SchemaChangeRunner:
         logger,
         environment,
         dry_run=False,
+        git_refetch_callback=None,
     ):
         self.deployment_config = deployment_config
         self.schemachange_config = schemachange_config
         self.logger = logger
         self.environment = environment
         self.dry_run = dry_run
+        self.git_refetch_callback = git_refetch_callback
         self.connections_file = None
 
     def execute(self):
@@ -275,6 +279,15 @@ class SchemaChangeRunner:
                 ["--version-number-validation-regex", version_regex]
             )
 
+        if (
+            object_type in self.GIT_DEPENDENT_OBJECT_TYPES
+            and self.git_refetch_callback is not None
+        ):
+            self.logger.info(
+                f"Refreshing Snowflake Git Repository before {object_type} deploy."
+            )
+            self.git_refetch_callback()
+
         self.logger.info(
             f"Running SchemaChange for {object_type}: "
             f"{database}.{schema} -> {root_folder}"
@@ -286,9 +299,18 @@ class SchemaChangeRunner:
             command,
             text=True,
             env=env,
+            capture_output=True,
         )
 
+        if result.stdout:
+            for line in result.stdout.splitlines():
+                self.logger.info(line)
+
         if result.returncode != 0:
+            if result.stderr:
+                for line in result.stderr.splitlines():
+                    self.logger.error(line)
+
             raise RuntimeError(
                 f"SchemaChange failed for {database}.{schema} "
                 f"({object_type}) in {root_folder}."

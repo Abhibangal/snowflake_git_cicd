@@ -9,9 +9,9 @@ LANGUAGE PYTHON
 RUNTIME_VERSION = '3.11'
 PACKAGES = ('snowflake-snowpark-python')
 IMPORTS = (
-    '@{{ git_repository }}/branches/{{ git_branch }}/snowflake/snowpark/RAW/CUSTOMER_HUB/EMP_DEPT_SP/src/'
+    '@{{ git_repository }}/branches/{{ git_branch }}/snowflake/snowpark/RAW/CUSTOMER_HUB/EMP_DEPT_SP/src/main.py'
 )
-HANDLER = 'main.run'
+HANDLER = 'run'
 EXECUTE AS OWNER;
 
 GRANT OWNERSHIP ON PROCEDURE EMP_DEPT_SP()
