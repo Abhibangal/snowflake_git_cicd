@@ -181,6 +181,7 @@ class SchemaChangeRunner:
             lines.append(f'private_key_file_pwd = "{passphrase}"')
 
         connections_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        connections_path.chmod(0o600)
 
         self.logger.info(
             f"Created SchemaChange connections file: {connections_path}"
