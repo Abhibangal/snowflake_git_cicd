@@ -94,18 +94,25 @@ def main():
     snowflake = None
 
     try:
-        if deployment_config.get("features", {}).get(
+        fetch_git_enabled = deployment_config.get("features", {}).get(
             "fetch_git_repository",
             False,
-        ):
+        )
+
+        def fetch_git_repository():
+            nonlocal snowflake
+
             snowflake = SnowflakeConnection(deployment_config, logger)
             snowflake.connect()
 
-            git = GitRepository(snowflake, logger, deployment_config)
-            git.fetch()
+            try:
+                GitRepository(snowflake, logger, deployment_config).fetch()
+            finally:
+                snowflake.close()
+                snowflake = None
 
-            snowflake.close()
-            snowflake = None
+        if fetch_git_enabled:
+            fetch_git_repository()
 
         dry_run = args.dry_run or deployment_config["schemachange"].get(
             "dry_run",
@@ -118,6 +125,9 @@ def main():
             logger,
             environment,
             dry_run=dry_run,
+            git_refetch_callback=(
+                fetch_git_repository if fetch_git_enabled else None
+            ),
         )
         schemachange.execute()
 

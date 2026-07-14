@@ -5,6 +5,7 @@ Project : Snowflake CI/CD Framework
 Execute SchemaChange per database/schema folder target.
 """
 
+import json
 import os
 import shutil
 import subprocess
@@ -35,6 +36,11 @@ def _schemachange_executable() -> str:
 class SchemaChangeRunner:
     """Run schemachange deploy for each discovered schema target."""
 
+    CONNECTIONS_FILE = "connections.toml"
+    CONNECTION_NAME = "cicd"
+
+    GIT_DEPENDENT_OBJECT_TYPES = frozenset({"storedprocedures", "snowpark"})
+
     def __init__(
         self,
         deployment_config,
@@ -42,15 +48,29 @@ class SchemaChangeRunner:
         logger,
         environment,
         dry_run=False,
+        git_refetch_callback=None,
     ):
         self.deployment_config = deployment_config
         self.schemachange_config = schemachange_config
         self.logger = logger
         self.environment = environment
         self.dry_run = dry_run
+        self.git_refetch_callback = git_refetch_callback
+        self.connections_file = None
 
     def execute(self):
         """Deploy all pending migrations grouped by folder-derived database/schema."""
+
+        self.connections_file = self._write_connections_toml()
+
+        try:
+            self._execute_deployments()
+        finally:
+            if self.connections_file and self.connections_file.exists():
+                self.connections_file.unlink()
+
+    def _execute_deployments(self):
+        """Run schemachange for all discovered schema targets."""
 
         history_table = self._history_table()
         deployment_order = self.deployment_config["deployment_order"]
@@ -122,6 +142,84 @@ class SchemaChangeRunner:
 
         return history_tables[self.environment]
 
+    def _git_branch(self) -> str:
+        branch_map = self.deployment_config.get("git", {}).get(
+            "branch",
+            {"DEV": "dev", "PROD": "main"},
+        )
+
+        if self.environment not in branch_map:
+            raise ValueError(
+                f"No Git branch configured for environment: {self.environment}"
+            )
+
+        return branch_map[self.environment]
+
+    def _schemachange_vars(self) -> dict:
+        git_config = self.deployment_config.get("git", {})
+
+        return {
+            "git_repository": git_config["repository_name"],
+            "git_branch": self._git_branch(),
+        }
+
+    def _write_connections_toml(self) -> Path:
+        """Write a Snowflake connections file for schemachange 4.x."""
+
+        snowflake_settings = self.deployment_config["snowflake"]
+        connections_path = Path(self.CONNECTIONS_FILE)
+        passphrase = snowflake_settings.get("private_key_passphrase", "")
+        passphrase = passphrase.strip() if isinstance(passphrase, str) else ""
+
+        lines = [
+            f"[{self.CONNECTION_NAME}]",
+            f'account = "{snowflake_settings["account"]}"',
+            f'user = "{snowflake_settings["user"]}"',
+            f'role = "{snowflake_settings["role"]}"',
+            f'warehouse = "{snowflake_settings["warehouse"]}"',
+            'authenticator = "snowflake_jwt"',
+            f'private_key_file = "{snowflake_settings["private_key_path"]}"',
+        ]
+
+        if passphrase:
+            lines.append(f'private_key_file_pwd = "{passphrase}"')
+
+        connections_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        connections_path.chmod(0o600)
+
+        self.logger.info(
+            f"Created SchemaChange connections file: {connections_path}"
+        )
+
+        return connections_path
+
+    def _build_subprocess_env(self, database, schema, snowflake_settings):
+        """Build environment variables for the schemachange subprocess."""
+
+        env = os.environ.copy()
+        env.update(
+            {
+                "SNOWFLAKE_ACCOUNT": snowflake_settings["account"],
+                "SNOWFLAKE_USER": snowflake_settings["user"],
+                "SNOWFLAKE_ROLE": snowflake_settings["role"],
+                "SNOWFLAKE_WAREHOUSE": snowflake_settings["warehouse"],
+                "SNOWFLAKE_DATABASE": database,
+                "SNOWFLAKE_SCHEMA": schema,
+                "SNOWFLAKE_AUTHENTICATOR": "snowflake_jwt",
+                "SNOWFLAKE_PRIVATE_KEY_FILE": snowflake_settings[
+                    "private_key_path"
+                ],
+            }
+        )
+
+        passphrase = snowflake_settings.get("private_key_passphrase", "")
+        passphrase = passphrase.strip() if isinstance(passphrase, str) else ""
+
+        if passphrase:
+            env["SNOWFLAKE_PRIVATE_KEY_FILE_PWD"] = passphrase
+
+        return env
+
     def _run_schemachange(
         self,
         root_folder,
@@ -134,9 +232,13 @@ class SchemaChangeRunner:
         schemachange_settings = self.deployment_config["schemachange"]
         snowflake_settings = self.deployment_config["snowflake"]
 
+        schemachange_vars = self._schemachange_vars()
+
         command = [
             _schemachange_executable(),
             "deploy",
+            "--config-folder",
+            "deployment/config",
             "-f",
             root_folder,
             "-c",
@@ -145,21 +247,20 @@ class SchemaChangeRunner:
             database,
             "-s",
             schema,
-            "-a",
-            snowflake_settings["account"],
-            "-u",
-            snowflake_settings["user"],
-            "-r",
-            snowflake_settings["role"],
-            "-w",
-            snowflake_settings["warehouse"],
-            "--snowflake-authenticator",
-            "snowflake_jwt",
-            "--snowflake-private-key-file",
-            snowflake_settings["private_key_path"],
+            "-V",
+            json.dumps(schemachange_vars),
+            "-C",
+            self.CONNECTION_NAME,
+            "--schemachange-connections-file-path",
+            str(self.connections_file),
             "-L",
             self.schemachange_config.get("log_level", "INFO"),
         ]
+
+        self.logger.info(
+            f"SchemaChange vars: git_branch={schemachange_vars['git_branch']}, "
+            f"git_repository={schemachange_vars['git_repository']}"
+        )
 
         if schemachange_settings.get("autocommit", True):
             command.append("-ac")
@@ -178,24 +279,38 @@ class SchemaChangeRunner:
                 ["--version-number-validation-regex", version_regex]
             )
 
+        if (
+            object_type in self.GIT_DEPENDENT_OBJECT_TYPES
+            and self.git_refetch_callback is not None
+        ):
+            self.logger.info(
+                f"Refreshing Snowflake Git Repository before {object_type} deploy."
+            )
+            self.git_refetch_callback()
+
         self.logger.info(
             f"Running SchemaChange for {object_type}: "
             f"{database}.{schema} -> {root_folder}"
         )
 
-        env = os.environ.copy()
-        passphrase = snowflake_settings.get("private_key_passphrase")
-
-        if passphrase:
-            env["SNOWFLAKE_PRIVATE_KEY_FILE_PWD"] = passphrase
+        env = self._build_subprocess_env(database, schema, snowflake_settings)
 
         result = subprocess.run(
             command,
             text=True,
             env=env,
+            capture_output=True,
         )
 
+        if result.stdout:
+            for line in result.stdout.splitlines():
+                self.logger.info(line)
+
         if result.returncode != 0:
+            if result.stderr:
+                for line in result.stderr.splitlines():
+                    self.logger.error(line)
+
             raise RuntimeError(
                 f"SchemaChange failed for {database}.{schema} "
                 f"({object_type}) in {root_folder}."
