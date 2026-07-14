@@ -18,7 +18,7 @@ def run(session, min_order_count):
         )
         .with_column("FULL_NAME", F.concat(F.col("FIRST_NAME"), F.lit(" "), F.col("LAST_NAME")))
         .filter(F.col("ORDER_COUNT") >= min_order_count)
-        .select("CUSTOMER_ID", "FULL_NAME", "ORDER_COUNT", "TOTAL_SPENT")
+        .select(customers_tbl["CUSTOMER_ID"], "FULL_NAME", "ORDER_COUNT", "TOTAL_SPENT")
     )
 
     return result

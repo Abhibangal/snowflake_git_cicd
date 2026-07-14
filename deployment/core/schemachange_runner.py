@@ -112,6 +112,7 @@ class SchemaChangeRunner:
                         root_folder=str(root_folder_path),
                         database=database,
                         schema=target.schema,
+                        database_layer=target.database_layer,
                         history_table=history_table,
                         create_history_table=(
                             create_history_table and not history_created
@@ -155,12 +156,24 @@ class SchemaChangeRunner:
 
         return branch_map[self.environment]
 
-    def _schemachange_vars(self) -> dict:
+    def _schemachange_vars(self, database_layer=None) -> dict:
         git_config = self.deployment_config.get("git", {})
+        grant_roles_by_env = self.deployment_config.get("grant_roles", {})
+
+        if self.environment not in grant_roles_by_env:
+            grant_roles = {}
+        else:
+            grant_roles = grant_roles_by_env[self.environment]
+
+        layer = database_layer.upper() if database_layer else None
+        grant_role = grant_roles.get(layer, "") if layer else ""
 
         return {
             "git_repository": git_config["repository_name"],
             "git_branch": self._git_branch(),
+            "environment": self.environment,
+            "grant_roles": grant_roles,
+            "grant_role": grant_role,
         }
 
     def _write_connections_toml(self) -> Path:
@@ -225,6 +238,7 @@ class SchemaChangeRunner:
         root_folder,
         database,
         schema,
+        database_layer,
         history_table,
         create_history_table,
         object_type,
@@ -232,7 +246,7 @@ class SchemaChangeRunner:
         schemachange_settings = self.deployment_config["schemachange"]
         snowflake_settings = self.deployment_config["snowflake"]
 
-        schemachange_vars = self._schemachange_vars()
+        schemachange_vars = self._schemachange_vars(database_layer)
 
         command = [
             _schemachange_executable(),
@@ -259,7 +273,9 @@ class SchemaChangeRunner:
 
         self.logger.info(
             f"SchemaChange vars: git_branch={schemachange_vars['git_branch']}, "
-            f"git_repository={schemachange_vars['git_repository']}"
+            f"git_repository={schemachange_vars['git_repository']}, "
+            f"environment={schemachange_vars['environment']}, "
+            f"grant_role={schemachange_vars['grant_role']}"
         )
 
         if schemachange_settings.get("autocommit", True):

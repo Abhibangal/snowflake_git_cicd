@@ -38,6 +38,7 @@ class SchemaDiscovery:
         "dynamic_tables",
         "tasks",
         "pipes",
+        "grants",
     }
 
     def __init__(self, root_folder: str, deployment_order: list[str]):

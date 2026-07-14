@@ -6,6 +6,7 @@ Master Validation Module
 """
 
 from deployment.core.config_loader import load_yaml
+from deployment.validation.validate_grant_roles import GrantRolesValidator
 from deployment.validation.validate_duplicate_versions import DuplicateVersionValidator
 from deployment.validation.validate_immutable_migrations import ImmutableMigrationValidator
 from deployment.validation.validate_project_structure import ProjectStructureValidator
@@ -38,6 +39,12 @@ class Validator:
         VersionFormatValidator(self.logger, root_folder).validate()
 
         DuplicateVersionValidator(self.logger, root_folder).validate()
+
+        GrantRolesValidator(
+            self.logger,
+            self.deployment_config,
+            root_folder=root_folder,
+        ).validate()
 
         ImmutableMigrationValidator(
             self.logger,

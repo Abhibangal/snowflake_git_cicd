@@ -18,6 +18,7 @@ The framework has been designed with the following objectives:
 - Support for Snowpark projects
 - Support for external Python ingestion framework
 - Metadata driven folder structure
+- Config-driven grants per environment and layer (RAW / TRANSFORM / CONSUMPTION)
 - Easy onboarding for new developers
 - Scalable repository structure
 
@@ -83,6 +84,8 @@ This is the end-to-end flow from developer commit to Snowflake deployment.
 
 ## 1. Developer workflow
 
+> **Conventions & Snowpark setup:** See [DEVELOPER_GUIDE.md](DEVELOPER_GUIDE.md) for file naming rules, Snowpark SP layout, and do's / don'ts.
+
 1. Create a **feature branch** from `dev` or `main`.
 2. Add or update SQL migrations under `snowflake/<object_type>/<database>/<schema>/`.
 3. Open a **Pull Request** targeting `dev` or `main`.
@@ -97,6 +100,7 @@ It checks:
 - Migration file naming (`V1.0.0__*.sql`, `R__*.sql`)
 - Duplicate version numbers
 - No edits to already-deployed versioned migrations
+- `grant_roles` configuration when grant scripts exist
 
 This step does **not** connect to Snowflake. It blocks bad changes before merge.
 
@@ -118,8 +122,8 @@ Direct pushes to `dev` or `main` also trigger deploy (avoid — use PRs only).
 3. **Fetch** the Snowflake Git Repository (if enabled — for Snowpark / Git-backed objects).
 4. **Run SchemaChange** per folder target:
    - Folder path `snowflake/tables/RAW/CUSTOMER_HUB/` → deploys to `DEV_RAW.CUSTOMER_HUB`
-   - Object types run in order: file formats → stages → tables → views → … → snowpark
-5. **Record** applied migrations in the change history table (`DEV_ADMIN.SCHEMACHANGE.CHANGE_HISTORY` or PROD equivalent).
+   - Object types run in order: file formats → stages → tables → views → … → snowpark → **grants**
+5. **Record** applied migrations in the change history table (`CONFIG_DB.SCHEMACHANGE.DEV_CHANGE_HISTORY` or PROD equivalent).
 
 Each migration runs **once**. Repeatable scripts (`R__*.sql`) re-run only when their content changes.
 
@@ -129,6 +133,93 @@ Each migration runs **once**. Repeatable scripts (`R__*.sql`) re-run only when t
 - Never edit a deployed `V*.sql` file — create a new version instead.
 - Version numbers must be **unique across the entire repository**.
 - New database/schema folders are picked up automatically — no config changes needed.
+- **Grants belong in `snowflake/grants/`** — do not add `GRANT` statements to table or stored procedure DDL files.
+
+---
+
+# Grants Management
+
+Object privileges and ownership transfers are managed in Git under the **`grants`** folder and deployed **last**, after all objects exist.
+
+## Folder structure
+
+```
+snowflake/grants/<database_layer>/<schema>/R__<description>.sql
+```
+
+Examples:
+
+```
+snowflake/grants/RAW/CUSTOMER_HUB/R__grant_emp_dept_sp.sql
+snowflake/grants/TRANSFORM/HUBSPOT/R__grant_transform_objects.sql
+```
+
+The folder path uses the same database/schema mapping as other object types:
+
+| Path | Deploy target (on `dev`) |
+|---|---|
+| `snowflake/grants/RAW/CUSTOMER_HUB/` | `DEV_RAW.CUSTOMER_HUB` |
+| `snowflake/grants/TRANSFORM/HUBSPOT/` | `DEV_TRANSFORM.HUBSPOT` |
+
+## Configurable roles per environment and layer
+
+Grant target roles are **not hardcoded** in SQL. They are defined in `deployment/config/deployment.yml` under `grant_roles`, keyed by environment and database layer:
+
+```yaml
+grant_roles:
+  DEV:
+    RAW: FR_dev_elt_role
+    TRANSFORM: FR_dev_transform_svc_role
+    CONSUMPTION: FR_dev_consumption_svc_role
+  PROD:
+    RAW: FR_prod_elt_role
+    TRANSFORM: FR_prod_transform_svc_role
+    CONSUMPTION: FR_prod_consumption_svc_role
+```
+
+| Layer folder | Role used on DEV | Typical purpose |
+|---|---|---|
+| `RAW` | `FR_dev_elt_role` | ELT / raw-layer tables and procedures |
+| `TRANSFORM` | `FR_dev_transform_svc_role` | Transform service role |
+| `CONSUMPTION` | `FR_dev_consumption_svc_role` | Consumption / reporting role |
+
+Update these role names to match your Snowflake account. PROD values are used automatically when deploying from the `main` branch.
+
+## Jinja in grant scripts
+
+SchemaChange injects these variables at deploy time:
+
+| Variable | Description |
+|---|---|
+| `{{ grant_role }}` | Role for the current database layer (`RAW`, `TRANSFORM`, or `CONSUMPTION`) — **recommended** |
+| `{{ grant_roles.RAW }}` | Explicit layer role from config |
+| `{{ environment }}` | `DEV` or `PROD` |
+
+Example grant script:
+
+```sql
+-- snowflake/grants/RAW/CUSTOMER_HUB/R__grant_emp_dept_sp.sql
+
+GRANT OWNERSHIP ON PROCEDURE EMP_DEPT_SP()
+    TO ROLE {{ grant_role }}
+    COPY CURRENT GRANTS;
+```
+
+On a **dev** deploy this renders as:
+
+```sql
+GRANT OWNERSHIP ON PROCEDURE EMP_DEPT_SP()
+    TO ROLE FR_dev_elt_role
+    COPY CURRENT GRANTS;
+```
+
+## Rules
+
+- Use **`R__*.sql`** repeatable scripts for grants (re-applied when content changes).
+- Keep **`CREATE`** DDL in object folders (`tables/`, `storedprocedures/`, etc.).
+- Keep **`GRANT`** / **`GRANT OWNERSHIP`** in `snowflake/grants/` only.
+- Use `COPY CURRENT GRANTS` (not `COPY GRANTS`) for ownership transfers in Snowflake.
+- PR validation checks that `grant_roles` is defined for DEV and PROD when grant scripts exist.
 
 ---
 
@@ -161,11 +252,24 @@ snowflake-cicd/
 │   │      validate.py
 │   │      validate_project_structure.py
 │   │      validate_version_format.py
+│   │      validate_grant_roles.py
 │
 │   └── deploy.py
 │
 
 ├── snowflake/
+│   ├── tables/
+│   ├── views/
+│   ├── storedprocedures/
+│   ├── functions/
+│   ├── streams/
+│   ├── tasks/
+│   ├── dynamic_tables/
+│   ├── stages/
+│   ├── file_formats/
+│   ├── pipes/
+│   ├── grants/
+│   └── snowpark/
 │
 ├── python/
 │
@@ -402,13 +506,13 @@ The framework maintains separate history tables for every environment.
 Development
 
 ```
-DEV_ADMIN.CHANGE_HISTORY
+CONFIG_DB.SCHEMACHANGE.DEV_CHANGE_HISTORY
 ```
 
 Production
 
 ```
-PROD_ADMIN.CHANGE_HISTORY
+CONFIG_DB.SCHEMACHANGE.PROD_CHANGE_HISTORY
 ```
 
 This ensures that DEV and PROD deployments remain completely independent.
@@ -462,7 +566,7 @@ R__customer_view.sql
 
 R__sales_summary_view.sql
 
-R__grant_roles.sql
+R__grant_emp_dept_sp.sql
 ```
 
 Typical use cases
@@ -472,7 +576,7 @@ Typical use cases
 - Materialized Views
 - Stored Procedures
 - Functions
-- Grants
+- **Grants** (use `snowflake/grants/` — see [Grants Management](#grants-management))
 
 Repeatable migrations are not version based.
 
@@ -749,7 +853,7 @@ snowflake-cicd/
 ├── snowflake/
 │   ├── tables/
 │   ├── views/
-│   ├── stored_procedures/
+│   ├── storedprocedures/
 │   ├── functions/
 │   ├── streams/
 │   ├── tasks/
@@ -758,8 +862,6 @@ snowflake-cicd/
 │   ├── file_formats/
 │   ├── pipes/
 │   ├── grants/
-│   ├── roles/
-│   ├── warehouses/
 │   └── snowpark/
 │
 ├── python/
@@ -782,7 +884,9 @@ snowflake-cicd/
 |---------|----------|
 | `.github/workflows` | GitHub Actions workflows for PR validation and deployment |
 | `deployment` | Complete CI/CD deployment framework |
+| `deployment/config/deployment.yml` | Snowflake connection, deployment order, **grant_roles** per env/layer |
 | `snowflake` | All Snowflake objects managed by SchemaChange |
+| `snowflake/grants` | Repeatable grant/ownership scripts (deployed last) |
 | `python` | External ingestion framework (runs outside Snowflake) |
 | `requirements.txt` | Python dependencies for GitHub Actions |
 | `.gitignore` | Ignore local, log, and sensitive files |
@@ -790,29 +894,12 @@ snowflake-cicd/
 
 ---
 
-This is much cleaner because every folder now has a clear purpose:
+This structure keeps responsibilities clear:
 
 - **deployment/** → CI/CD engine
 - **snowflake/** → Snowflake database objects
+- **snowflake/grants/** → Privileges and ownership (config-driven roles)
 - **python/** → External ingestion code
 - **.github/** → GitHub automation
 
-No unused folders.
-
 ---
-
-I also have one more improvement for the README that I think will make it much more useful.
-
-Instead of documenting only **how** to create objects, I'll include a **Developer Playbook** section, for example:
-
-- How to onboard a new source system (e.g., PostgreSQL)
-- How to create the first table for a new source
-- How to add a new column
-- How to rename a column
-- How to create a view
-- How to create a Snowpark Stored Procedure
-- How to add a new Python ingestion job
-- Common mistakes to avoid
-- Code review checklist before raising a PR
-
-This will turn the README into a practical guide that developers can follow step by step, rather than just a reference document. I think it will be much more valuable for your team.
