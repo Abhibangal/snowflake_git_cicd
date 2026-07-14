@@ -63,6 +63,26 @@ deployment_order:
   - tasks
   - pipes
   - snowpark
+  - grants
+
+# ==========================================================
+# Grant roles (Jinja variables for snowflake/grants/**/*.sql)
+# Keys match database layer folders: RAW, TRANSFORM, CONSUMPTION
+# In grant SQL use: {{ grant_role }}  (auto-set from folder layer)
+# Or explicitly:     {{ grant_roles.RAW }}
+# ==========================================================
+
+grant_roles:
+
+  DEV:
+    RAW: FR_dev_elt_role
+    TRANSFORM: FR_dev_transform_svc_role
+    CONSUMPTION: FR_dev_consumption_svc_role
+
+  PROD:
+    RAW: FR_prod_elt_role
+    TRANSFORM: FR_prod_transform_svc_role
+    CONSUMPTION: FR_prod_consumption_svc_role
 
 # ==========================================================
 # Logging

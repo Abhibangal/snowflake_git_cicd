@@ -26,6 +26,7 @@ class ProjectStructureValidator:
             "snowflake/stages",
             "snowflake/file_formats",
             "snowflake/pipes",
+            "snowflake/grants",
             "snowflake/snowpark",
             "deployment",
             "deployment/core",
