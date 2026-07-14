@@ -84,6 +84,8 @@ This is the end-to-end flow from developer commit to Snowflake deployment.
 
 ## 1. Developer workflow
 
+> **Conventions & Snowpark setup:** See [DEVELOPER_GUIDE.md](DEVELOPER_GUIDE.md) for file naming rules, Snowpark SP layout, and do's / don'ts.
+
 1. Create a **feature branch** from `dev` or `main`.
 2. Add or update SQL migrations under `snowflake/<object_type>/<database>/<schema>/`.
 3. Open a **Pull Request** targeting `dev` or `main`.
