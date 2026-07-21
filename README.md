@@ -101,6 +101,7 @@ It checks:
 - Duplicate version numbers
 - No edits to already-deployed versioned migrations
 - `grant_roles` configuration when grant scripts exist
+- No hardcoded `DEV_RAW` / `PROD_RAW` in views or dynamic tables (use `{{ databases.RAW }}`)
 
 This step does **not** connect to Snowflake. It blocks bad changes before merge.
 
@@ -194,6 +195,18 @@ SchemaChange injects these variables at deploy time:
 | `{{ grant_role }}` | Role for the current database layer (`RAW`, `TRANSFORM`, or `CONSUMPTION`) — **recommended** |
 | `{{ grant_roles.RAW }}` | Explicit layer role from config |
 | `{{ environment }}` | `DEV` or `PROD` |
+| `{{ databases.RAW }}` | Resolves to `DEV_RAW` or `PROD_RAW` — use in **views / dynamic tables** |
+| `{{ databases.TRANSFORM }}` | Resolves to `DEV_TRANSFORM` or `PROD_TRANSFORM` |
+| `{{ databases.CONSUMPTION }}` | Resolves to `DEV_CONSUMPTION` or `PROD_CONSUMPTION` |
+
+Example cross-layer view:
+
+```sql
+CREATE OR REPLACE VIEW VW_CUSTOMERS AS
+SELECT * FROM {{ databases.RAW }}.HUBSPOT.CUSTOMERS;
+```
+
+On **dev** deploy this renders as `DEV_RAW.HUBSPOT.CUSTOMERS`; on **main** as `PROD_RAW.HUBSPOT.CUSTOMERS`.
 
 Example grant script:
 

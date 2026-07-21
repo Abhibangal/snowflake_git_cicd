@@ -18,7 +18,7 @@ For CI/CD workflow and grants configuration, see the main [README](README.md).
 | Keep **Python** in `snowflake/snowpark/` and **DDL** in `snowflake/storedprocedures/` | Put Python inline inside the SP DDL file |
 | Put **GRANT** statements in `snowflake/grants/` | Put `GRANT` / `GRANT OWNERSHIP` inside table or SP DDL |
 | Use `{{ grant_role }}` for grants | Hardcode role names like `FR_dev_elt_role` in grant SQL |
-| Use Jinja only for Git repo path, branch, and grant roles | Use Jinja for database or schema names |
+| Use Jinja only for Git repo path, branch, grant roles, and cross-layer DB refs in views/dynamic tables | Hardcode `DEV_RAW` / `PROD_RAW` in views or dynamic tables |
 | Open a PR to `dev` or `main` | Commit directly to `dev` or `main` |
 
 ---
@@ -154,6 +154,48 @@ Implications:
 - Create **tables** before **stored procedures** that read them.
 - Create **stored procedures** before **grants** that reference them.
 - **Grants always deploy last.**
+
+---
+
+## 5a. Views and dynamic tables — cross-layer database references
+
+When a **view** or **dynamic table** selects from another database layer (e.g. CONSUMPTION reading RAW), use Jinja `{{ databases.<LAYER> }}`. The pipeline resolves it from branch/environment:
+
+| Jinja | On `dev` (DEV) | On `main` (PROD) |
+|---|---|---|
+| `{{ databases.RAW }}` | `DEV_RAW` | `PROD_RAW` |
+| `{{ databases.TRANSFORM }}` | `DEV_TRANSFORM` | `PROD_TRANSFORM` |
+| `{{ databases.CONSUMPTION }}` | `DEV_CONSUMPTION` | `PROD_CONSUMPTION` |
+
+Layers are configured in `deployment/config/deployment.yml` under `database_layers`.
+
+**Example view** (`snowflake/views/CONSUMPTION/COMMERCIAL_SCH/R__vw_customers.sql`):
+
+```sql
+CREATE OR REPLACE VIEW VW_CUSTOMERS AS
+SELECT
+    c.CUSTOMER_ID,
+    c.FIRST_NAME,
+    c.LAST_NAME
+FROM {{ databases.RAW }}.HUBSPOT.CUSTOMERS c;
+```
+
+**Example dynamic table**:
+
+```sql
+CREATE OR REPLACE DYNAMIC TABLE DT_CUSTOMER_ORDERS
+  TARGET_LAG = '1 hour'
+  WAREHOUSE = TRANSFORM_WH
+AS
+SELECT *
+FROM {{ databases.RAW }}.HUBSPOT.ORDERS;
+```
+
+Rules:
+
+- **Same database/schema** as deploy target → use unqualified names (`EMP`, not `DEV_RAW...EMP`).
+- **Cross-layer SELECT** in views/dynamic tables → use `{{ databases.RAW }}`, etc.
+- **Never** hardcode `DEV_RAW` or `PROD_RAW` in views/dynamic_tables (PR validation fails).
 
 ---
 
@@ -341,8 +383,11 @@ PR validation blocks edits to already-committed versioned migrations.
 | `{{ grant_role }}` | `snowflake/grants/` | Layer role from config (RAW / TRANSFORM / CONSUMPTION) |
 | `{{ grant_roles.RAW }}` | Grants (optional) | Explicit layer role |
 | `{{ environment }}` | Any (optional) | `DEV` or `PROD` |
+| `{{ databases.RAW }}` | `views/`, `dynamic_tables/` | Cross-layer DB: `DEV_RAW` / `PROD_RAW` |
+| `{{ databases.TRANSFORM }}` | `views/`, `dynamic_tables/` | Cross-layer DB: `DEV_TRANSFORM` / `PROD_TRANSFORM` |
+| `{{ databases.CONSUMPTION }}` | `views/`, `dynamic_tables/` | Cross-layer DB: `DEV_CONSUMPTION` / `PROD_CONSUMPTION` |
 
-**Not used for database/schema mapping.** Folder structure handles that.
+Folder structure still sets the **deploy target** database/schema. Use `{{ databases.* }}` only for **cross-layer SELECTs** in views and dynamic tables.
 
 ---
 
@@ -353,7 +398,8 @@ PR validation blocks edits to already-committed versioned migrations.
 - [ ] Repeatable files named `R__description.sql`
 - [ ] No edits to previously deployed `V*.sql` files
 - [ ] Version number is unique repo-wide
-- [ ] No `DEV_RAW`, `PROD_RAW`, or hardcoded schema/database in SQL
+- [ ] No `DEV_RAW`, `PROD_RAW` in **views** or **dynamic_tables** — use `{{ databases.RAW }}` etc.
+- [ ] No hardcoded schema/database in table DDL or SPs (same-layer objects use unqualified names)
 - [ ] Snowpark: Python in `snowpark/.../src/`, DDL in `storedprocedures/`
 - [ ] SP IMPORTS use `{{ git_repository }}` and `{{ git_branch }}`
 - [ ] Grants in `snowflake/grants/` using `{{ grant_role }}`
@@ -396,6 +442,7 @@ The pipeline validates automatically:
 | Version format | `V*.*.*__*.sql` and `R__*.sql` only |
 | Duplicate versions | No two files share the same version number |
 | Immutable migrations | No changes to existing `V*.sql` in the PR |
+| Hardcoded database refs | No `DEV_RAW` / `PROD_RAW` in views or dynamic_tables |
 | Grant roles config | `grant_roles` defined for DEV/PROD when grant scripts exist |
 
 Run locally before pushing:

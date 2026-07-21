@@ -66,6 +66,21 @@ deployment_order:
   - grants
 
 # ==========================================================
+# Database layers (Jinja variables for views / dynamic_tables)
+# Resolves at deploy time:
+#   {{ databases.RAW }}        -> DEV_RAW on dev, PROD_RAW on main
+#   {{ databases.TRANSFORM }}  -> DEV_TRANSFORM / PROD_TRANSFORM
+#   {{ databases.CONSUMPTION }} -> DEV_CONSUMPTION / PROD_CONSUMPTION
+# Use in cross-layer SELECTs inside views and dynamic table DDL.
+# ==========================================================
+
+database_layers:
+
+  - RAW
+  - TRANSFORM
+  - CONSUMPTION
+
+# ==========================================================
 # Grant roles (Jinja variables for snowflake/grants/**/*.sql)
 # Keys match database layer folders: RAW, TRANSFORM, CONSUMPTION
 # In grant SQL use: {{ grant_role }}  (auto-set from folder layer)

@@ -12,6 +12,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+from deployment.core.jinja_vars import build_databases, get_database_layers
 from deployment.core.schema_discovery import SchemaDiscovery
 
 
@@ -168,12 +169,16 @@ class SchemaChangeRunner:
         layer = database_layer.upper() if database_layer else None
         grant_role = grant_roles.get(layer, "") if layer else ""
 
+        database_layers = get_database_layers(self.deployment_config)
+        databases = build_databases(self.environment, database_layers)
+
         return {
             "git_repository": git_config["repository_name"],
             "git_branch": self._git_branch(),
             "environment": self.environment,
             "grant_roles": grant_roles,
             "grant_role": grant_role,
+            "databases": databases,
         }
 
     def _write_connections_toml(self) -> Path:
@@ -275,7 +280,8 @@ class SchemaChangeRunner:
             f"SchemaChange vars: git_branch={schemachange_vars['git_branch']}, "
             f"git_repository={schemachange_vars['git_repository']}, "
             f"environment={schemachange_vars['environment']}, "
-            f"grant_role={schemachange_vars['grant_role']}"
+            f"grant_role={schemachange_vars['grant_role']}, "
+            f"databases={schemachange_vars['databases']}"
         )
 
         if schemachange_settings.get("autocommit", True):
