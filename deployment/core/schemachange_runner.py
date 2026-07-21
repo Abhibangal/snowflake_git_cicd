@@ -15,6 +15,7 @@ from pathlib import Path
 from deployment.core.jinja_vars import (
     build_access_roles_for_target,
     build_databases,
+    build_warehouses,
     default_grant_privilege,
     get_database_layers,
 )
@@ -167,6 +168,7 @@ class SchemaChangeRunner:
 
         database_layers = get_database_layers(self.deployment_config)
         databases = build_databases(self.environment, database_layers)
+        warehouses = build_warehouses(self.environment, self.deployment_config)
 
         access_roles = {}
         grant_role = ""
@@ -191,6 +193,7 @@ class SchemaChangeRunner:
             "access_role": access_role,
             "access_roles": access_roles,
             "databases": databases,
+            "warehouses": warehouses,
         }
 
     def _write_connections_toml(self) -> Path:
@@ -294,7 +297,8 @@ class SchemaChangeRunner:
             f"environment={schemachange_vars['environment']}, "
             f"grant_role={schemachange_vars['grant_role']}, "
             f"access_roles={schemachange_vars['access_roles']}, "
-            f"databases={schemachange_vars['databases']}"
+            f"databases={schemachange_vars['databases']}, "
+            f"warehouses={schemachange_vars['warehouses']}"
         )
 
         if schemachange_settings.get("autocommit", True):

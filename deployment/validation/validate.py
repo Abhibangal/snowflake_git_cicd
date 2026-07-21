@@ -10,6 +10,12 @@ from deployment.validation.validate_grant_roles import GrantRolesValidator
 from deployment.validation.validate_hardcoded_database_refs import (
     HardcodedDatabaseRefValidator,
 )
+from deployment.validation.validate_hardcoded_warehouse_refs import (
+    HardcodedWarehouseRefValidator,
+)
+from deployment.validation.validate_warehouses_config import (
+    WarehousesConfigValidator,
+)
 from deployment.validation.validate_duplicate_versions import DuplicateVersionValidator
 from deployment.validation.validate_immutable_migrations import ImmutableMigrationValidator
 from deployment.validation.validate_project_structure import ProjectStructureValidator
@@ -42,6 +48,14 @@ class Validator:
         VersionFormatValidator(self.logger, root_folder).validate()
 
         HardcodedDatabaseRefValidator(self.logger, root_folder).validate()
+
+        HardcodedWarehouseRefValidator(self.logger, root_folder).validate()
+
+        WarehousesConfigValidator(
+            self.logger,
+            self.deployment_config,
+            root_folder=root_folder,
+        ).validate()
 
         DuplicateVersionValidator(self.logger, root_folder).validate()
 
