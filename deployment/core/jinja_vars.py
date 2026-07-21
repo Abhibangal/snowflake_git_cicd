@@ -38,6 +38,29 @@ def get_database_layers(deployment_config: dict) -> list[str]:
     return ["RAW", "TRANSFORM", "CONSUMPTION"]
 
 
+def build_warehouses(environment: str, deployment_config: dict) -> dict[str, str]:
+    """
+    Map logical warehouse names to Snowflake warehouse names for the environment.
+
+    Example (DEV): DEVELOPER -> WH_DEV_DEVELOPER_XS, ELT -> WH_DEV_ELT_XS
+    Example (PROD): DEVELOPER -> WH_PROD_DEVELOPER_XS, ELT -> WH_PROD_ELT_XS
+    """
+
+    warehouse_config = deployment_config.get("warehouses", {})
+    env = environment.upper()
+    warehouses = {}
+
+    for name, env_map in warehouse_config.items():
+        if env not in env_map:
+            raise ValueError(
+                f"No warehouse configured for '{name}' in environment '{env}'."
+            )
+
+        warehouses[name.upper()] = env_map[env]
+
+    return warehouses
+
+
 def build_databases(environment: str, layers: list[str]) -> dict[str, str]:
     """
     Map layer folder names to Snowflake database names for the environment.

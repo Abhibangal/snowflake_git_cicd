@@ -18,7 +18,7 @@ For CI/CD workflow and grants configuration, see the main [README](README.md).
 | Keep **Python** in `snowflake/snowpark/` and **DDL** in `snowflake/storedprocedures/` | Put Python inline inside the SP DDL file |
 | Put **GRANT** statements in `snowflake/grants/` | Put `GRANT` / `GRANT OWNERSHIP` inside table or SP DDL |
 | Use `{{ grant_role }}` or `{{ access_roles.RW }}` for grants | Hardcode access role names like `AR_DEV_RAW_CUSTOMERHUB_RW` in grant SQL |
-| Use Jinja only for Git repo path, branch, grant roles, and cross-layer DB refs in views/dynamic tables | Hardcode `DEV_RAW` / `PROD_RAW` in views or dynamic tables |
+| Use Jinja only for Git repo path, branch, grant roles, cross-layer DB refs, and warehouses in views/dynamic tables/tasks | Hardcode `DEV_RAW` / `PROD_RAW` or `WH_DEV_*` / `WH_PROD_*` warehouse names |
 | Open a PR to `dev` or `main` | Commit directly to `dev` or `main` |
 
 ---
@@ -185,17 +185,44 @@ FROM {{ databases.RAW }}.HUBSPOT.CUSTOMERS c;
 ```sql
 CREATE OR REPLACE DYNAMIC TABLE DT_CUSTOMER_ORDERS
   TARGET_LAG = '1 hour'
-  WAREHOUSE = TRANSFORM_WH
+  WAREHOUSE = {{ warehouses.ELT }}
 AS
 SELECT *
 FROM {{ databases.RAW }}.HUBSPOT.ORDERS;
+```
+
+**Example task**:
+
+```sql
+CREATE OR REPLACE TASK TASK_REFRESH_ORDERS
+  WAREHOUSE = {{ warehouses.ELT }}
+  SCHEDULE = 'USING CRON 0 * * * * UTC'
+AS
+  CALL SOME_PROC();
 ```
 
 Rules:
 
 - **Same database/schema** as deploy target → use unqualified names (`EMP`, not `DEV_RAW...EMP`).
 - **Cross-layer SELECT** in views/dynamic tables → use `{{ databases.RAW }}`, etc.
+- **WAREHOUSE clause** in dynamic tables/tasks → use `{{ warehouses.ELT }}` or `{{ warehouses.DEVELOPER }}`.
 - **Never** hardcode `DEV_RAW` or `PROD_RAW` in views/dynamic_tables (PR validation fails).
+- **Never** hardcode `WH_DEV_*` or `WH_PROD_*` in dynamic_tables/tasks (PR validation fails).
+
+---
+
+## 5b. Dynamic tables and tasks — warehouse references
+
+When a **dynamic table** or **task** needs a warehouse, use Jinja `{{ warehouses.<NAME> }}`. The pipeline resolves it from branch/environment:
+
+| Jinja | On `dev` (DEV) | On `main` (PROD) |
+|---|---|---|
+| `{{ warehouses.DEVELOPER }}` | `WH_DEV_DEVELOPER_XS` | `WH_PROD_DEVELOPER_XS` |
+| `{{ warehouses.ELT }}` | `WH_DEV_ELT_XS` | `WH_PROD_ELT_XS` |
+
+Warehouses are configured in `deployment/config/deployment.yml` under `warehouses`.
+
+**Note:** `CICD_DEPLOY_WH` in the same config file is only for the CI/CD deploy connection — not for object DDL.
 
 ---
 
@@ -395,8 +422,10 @@ PR validation blocks edits to already-committed versioned migrations.
 | `{{ databases.RAW }}` | `views/`, `dynamic_tables/` | Cross-layer DB: `DEV_RAW` / `PROD_RAW` |
 | `{{ databases.TRANSFORM }}` | `views/`, `dynamic_tables/` | Cross-layer DB: `DEV_TRANSFORM` / `PROD_TRANSFORM` |
 | `{{ databases.CONSUMPTION }}` | `views/`, `dynamic_tables/` | Cross-layer DB: `DEV_CONSUMPTION` / `PROD_CONSUMPTION` |
+| `{{ warehouses.DEVELOPER }}` | `dynamic_tables/`, `tasks/` | Developer warehouse: `WH_DEV_DEVELOPER_XS` / `WH_PROD_DEVELOPER_XS` |
+| `{{ warehouses.ELT }}` | `dynamic_tables/`, `tasks/` | ELT warehouse: `WH_DEV_ELT_XS` / `WH_PROD_ELT_XS` |
 
-Folder structure still sets the **deploy target** database/schema. Use `{{ databases.* }}` only for **cross-layer SELECTs** in views and dynamic tables.
+Folder structure still sets the **deploy target** database/schema. Use `{{ databases.* }}` for **cross-layer SELECTs** in views and dynamic tables. Use `{{ warehouses.* }}` for **WAREHOUSE** clauses in dynamic tables and tasks.
 
 ---
 
@@ -408,6 +437,7 @@ Folder structure still sets the **deploy target** database/schema. Use `{{ datab
 - [ ] No edits to previously deployed `V*.sql` files
 - [ ] Version number is unique repo-wide
 - [ ] No `DEV_RAW`, `PROD_RAW` in **views** or **dynamic_tables** — use `{{ databases.RAW }}` etc.
+- [ ] No `WH_DEV_*`, `WH_PROD_*` in **dynamic_tables** or **tasks** — use `{{ warehouses.ELT }}` etc.
 - [ ] No hardcoded schema/database in table DDL or SPs (same-layer objects use unqualified names)
 - [ ] Snowpark: Python in `snowpark/.../src/`, DDL in `storedprocedures/`
 - [ ] SP IMPORTS use `{{ git_repository }}` and `{{ git_branch }}`
@@ -452,6 +482,8 @@ The pipeline validates automatically:
 | Duplicate versions | No two files share the same version number |
 | Immutable migrations | No changes to existing `V*.sql` in the PR |
 | Hardcoded database refs | No `DEV_RAW` / `PROD_RAW` in views or dynamic_tables |
+| Hardcoded warehouse refs | No `WH_DEV_*` / `WH_PROD_*` in dynamic_tables or tasks |
+| Warehouse config | `warehouses` DEV/PROD mapping when dynamic_tables or tasks exist |
 | Access roles config | `access_roles` layer/schema mapping when grant scripts exist |
 
 Run locally before pushing:
