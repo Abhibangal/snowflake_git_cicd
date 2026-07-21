@@ -100,7 +100,7 @@ It checks:
 - Migration file naming (`V1.0.0__*.sql`, `R__*.sql`)
 - Duplicate version numbers
 - No edits to already-deployed versioned migrations
-- `grant_roles` configuration when grant scripts exist
+- `access_roles` configuration when grant scripts exist
 - No hardcoded `DEV_RAW` / `PROD_RAW` in views or dynamic tables (use `{{ databases.RAW }}`)
 
 This step does **not** connect to Snowflake. It blocks bad changes before merge.
@@ -162,29 +162,45 @@ The folder path uses the same database/schema mapping as other object types:
 | `snowflake/grants/RAW/CUSTOMER_HUB/` | `DEV_RAW.CUSTOMER_HUB` |
 | `snowflake/grants/TRANSFORM/HUBSPOT/` | `DEV_TRANSFORM.HUBSPOT` |
 
-## Configurable roles per environment and layer
+## Access roles (AR) per environment, layer, and schema
 
-Grant target roles are **not hardcoded** in SQL. They are defined in `deployment/config/deployment.yml` under `grant_roles`, keyed by environment and database layer:
+Grant target roles are **not hardcoded** in SQL. They are built automatically from the grants folder path and branch:
 
-```yaml
-grant_roles:
-  DEV:
-    RAW: FR_dev_elt_role
-    TRANSFORM: FR_dev_transform_svc_role
-    CONSUMPTION: FR_dev_consumption_svc_role
-  PROD:
-    RAW: FR_prod_elt_role
-    TRANSFORM: FR_prod_transform_svc_role
-    CONSUMPTION: FR_prod_consumption_svc_role
+```text
+AR_{ENV}_{LAYER}_{SCHEMA}_{PRIVILEGE}
 ```
 
-| Layer folder | Role used on DEV | Typical purpose |
+| Part | Source | Example |
 |---|---|---|
-| `RAW` | `FR_dev_elt_role` | ELT / raw-layer tables and procedures |
-| `TRANSFORM` | `FR_dev_transform_svc_role` | Transform service role |
-| `CONSUMPTION` | `FR_dev_consumption_svc_role` | Consumption / reporting role |
+| `ENV` | Branch (`dev` → DEV, `main` → PROD) | `DEV` |
+| `LAYER` | Database layer folder | `RAW`, `TRF`, `CON` |
+| `SCHEMA` | Schema folder | `CUSTOMERHUB`, `HUBSPOT` |
+| `PRIVILEGE` | Config default or Jinja | `RW`, `RO`, `ALL` |
 
-Update these role names to match your Snowflake account. PROD values are used automatically when deploying from the `main` branch.
+Example: `snowflake/grants/RAW/CUSTOMER_HUB/` on **dev** → `AR_DEV_RAW_CUSTOMERHUB_RW`
+
+Layer and schema abbreviations are configured in `deployment/config/deployment.yml`:
+
+```yaml
+access_roles:
+  default_privilege: RW
+  layer_codes:
+    RAW: RAW
+    TRANSFORM: TRF
+    CONSUMPTION: CON
+  schema_codes:
+    CUSTOMER_HUB: CUSTOMERHUB
+    HUBSPOT: HUBSPOT
+    QUICKBOOKS: QUICKBOOKS
+    ASANA: ASANA
+    UTILS: SDT
+```
+
+| Privilege | Meaning |
+|---|---|
+| `ALL` | Full access to schema |
+| `RW` | Read-write (default for `{{ grant_role }}`) |
+| `RO` | Read-only |
 
 ## Jinja in grant scripts
 
@@ -192,8 +208,11 @@ SchemaChange injects these variables at deploy time:
 
 | Variable | Description |
 |---|---|
-| `{{ grant_role }}` | Role for the current database layer (`RAW`, `TRANSFORM`, or `CONSUMPTION`) — **recommended** |
-| `{{ grant_roles.RAW }}` | Explicit layer role from config |
+| `{{ grant_role }}` | Default access role for current grants folder (RW) — **recommended** |
+| `{{ access_role }}` | Same as `{{ grant_role }}` |
+| `{{ access_roles.RW }}` | Read-write role for current layer + schema |
+| `{{ access_roles.RO }}` | Read-only role for current layer + schema |
+| `{{ access_roles.ALL }}` | Full access role for current layer + schema |
 | `{{ environment }}` | `DEV` or `PROD` |
 | `{{ databases.RAW }}` | Resolves to `DEV_RAW` or `PROD_RAW` — use in **views / dynamic tables** |
 | `{{ databases.TRANSFORM }}` | Resolves to `DEV_TRANSFORM` or `PROD_TRANSFORM` |
@@ -222,7 +241,7 @@ On a **dev** deploy this renders as:
 
 ```sql
 GRANT OWNERSHIP ON PROCEDURE EMP_DEPT_SP()
-    TO ROLE FR_dev_elt_role
+    TO ROLE AR_DEV_RAW_CUSTOMERHUB_RW
     COPY CURRENT GRANTS;
 ```
 
@@ -232,7 +251,7 @@ GRANT OWNERSHIP ON PROCEDURE EMP_DEPT_SP()
 - Keep **`CREATE`** DDL in object folders (`tables/`, `storedprocedures/`, etc.).
 - Keep **`GRANT`** / **`GRANT OWNERSHIP`** in `snowflake/grants/` only.
 - Use `COPY CURRENT GRANTS` (not `COPY GRANTS`) for ownership transfers in Snowflake.
-- PR validation checks that `grant_roles` is defined for DEV and PROD when grant scripts exist.
+- PR validation checks that `access_roles` is configured when grant scripts exist.
 
 ---
 
@@ -897,7 +916,7 @@ snowflake-cicd/
 |---------|----------|
 | `.github/workflows` | GitHub Actions workflows for PR validation and deployment |
 | `deployment` | Complete CI/CD deployment framework |
-| `deployment/config/deployment.yml` | Snowflake connection, deployment order, **grant_roles** per env/layer |
+| `deployment/config/deployment.yml` | Snowflake connection, deployment order, **access_roles** mapping |
 | `snowflake` | All Snowflake objects managed by SchemaChange |
 | `snowflake/grants` | Repeatable grant/ownership scripts (deployed last) |
 | `python` | External ingestion framework (runs outside Snowflake) |
