@@ -2,7 +2,31 @@
 # SchemaChange Configuration
 # ==========================================================
 
-log_level: INFO
+# Root folder containing all Snowflake objects
+root_folder: snowflake
 
-# Match the custom versioning convention documented in README.md
-version_number_validation_regex: "^\\d+\\.\\d+\\.\\d+$"
+# Enable verbose SchemaChange logs
+verbose: true
+
+# Execute all migrations in a transaction where applicable
+autocommit: true
+
+# Execute actual deployment
+# Set to true only for testing
+dry_run: false
+
+# SchemaChange History Table Name
+# Environment prefix (DEV_/PROD_) will be added dynamically
+history_table: CHANGE_HISTORY
+
+# Versioned Migration Prefix
+versioned_file_prefix: V
+
+# Repeatable Migration Prefix
+repeatable_file_prefix: R
+
+# Migration Separator
+migration_separator: "__"
+
+# SQL File Extension
+file_extension: ".sql"

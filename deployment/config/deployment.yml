@@ -81,23 +81,35 @@ database_layers:
   - CONSUMPTION
 
 # ==========================================================
-# Grant roles (Jinja variables for snowflake/grants/**/*.sql)
-# Keys match database layer folders: RAW, TRANSFORM, CONSUMPTION
-# In grant SQL use: {{ grant_role }}  (auto-set from folder layer)
-# Or explicitly:     {{ grant_roles.RAW }}
+# Access roles (Jinja variables for snowflake/grants/**/*.sql)
+# Pattern: AR_{ENV}_{LAYER}_{SCHEMA}_{PRIVILEGE}
+#   ENV:        DEV / PROD (from branch)
+#   LAYER:      RAW / TRF / CON (from folder: RAW, TRANSFORM, CONSUMPTION)
+#   SCHEMA:     CUSTOMERHUB, HUBSPOT, etc. (from schema folder name)
+#   PRIVILEGE:  ALL / RO / RW
+#
+# In grant SQL use:
+#   {{ grant_role }}           -> default RW role for current folder target
+#   {{ access_roles.RW }}      -> explicit read-write role
+#   {{ access_roles.RO }}      -> read-only role
+#   {{ access_roles.ALL }}     -> full access role
 # ==========================================================
 
-grant_roles:
+access_roles:
 
-  DEV:
-    RAW: FR_dev_elt_role
-    TRANSFORM: FR_dev_transform_svc_role
-    CONSUMPTION: FR_dev_consumption_svc_role
+  default_privilege: RW
 
-  PROD:
-    RAW: FR_prod_elt_role
-    TRANSFORM: FR_prod_transform_svc_role
-    CONSUMPTION: FR_prod_consumption_svc_role
+  layer_codes:
+    RAW: RAW
+    TRANSFORM: TRF
+    CONSUMPTION: CON
+
+  schema_codes:
+    CUSTOMER_HUB: CUSTOMERHUB
+    HUBSPOT: HUBSPOT
+    QUICKBOOKS: QUICKBOOKS
+    ASANA: ASANA
+    UTILS: SDT
 
 # ==========================================================
 # Logging

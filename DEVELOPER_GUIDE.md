@@ -17,7 +17,7 @@ For CI/CD workflow and grants configuration, see the main [README](README.md).
 | Create a **new version file** for table changes | Edit a deployed `V*.sql` file |
 | Keep **Python** in `snowflake/snowpark/` and **DDL** in `snowflake/storedprocedures/` | Put Python inline inside the SP DDL file |
 | Put **GRANT** statements in `snowflake/grants/` | Put `GRANT` / `GRANT OWNERSHIP` inside table or SP DDL |
-| Use `{{ grant_role }}` for grants | Hardcode role names like `FR_dev_elt_role` in grant SQL |
+| Use `{{ grant_role }}` or `{{ access_roles.RW }}` for grants | Hardcode access role names like `AR_DEV_RAW_CUSTOMERHUB_RW` in grant SQL |
 | Use Jinja only for Git repo path, branch, grant roles, and cross-layer DB refs in views/dynamic tables | Hardcode `DEV_RAW` / `PROD_RAW` in views or dynamic tables |
 | Open a PR to `dev` or `main` | Commit directly to `dev` or `main` |
 
@@ -282,7 +282,14 @@ GRANT OWNERSHIP ON PROCEDURE EMP_DEPT_SP()
     COPY CURRENT GRANTS;
 ```
 
-`{{ grant_role }}` resolves from `deployment/config/deployment.yml` based on layer (`RAW`) and environment.
+`{{ grant_role }}` resolves automatically from folder path + branch:
+
+```text
+snowflake/grants/RAW/CUSTOMER_HUB/  →  AR_DEV_RAW_CUSTOMERHUB_RW  (on dev)
+                                      →  AR_PROD_RAW_CUSTOMERHUB_RW (on main)
+```
+
+Use `{{ access_roles.RO }}` or `{{ access_roles.ALL }}` when a different privilege is needed.
 
 #### Step 4 — Deploy flow
 
@@ -334,7 +341,7 @@ CREATE TABLE IF NOT EXISTS EMP (...);
 
 ```sql
 -- ❌ Wrong
-GRANT OWNERSHIP ON PROCEDURE EMP_DEPT_SP() TO ROLE FR_dev_elt_role;
+GRANT OWNERSHIP ON PROCEDURE EMP_DEPT_SP() TO ROLE AR_DEV_RAW_CUSTOMERHUB_RW;
 ```
 
 ```sql
@@ -380,8 +387,10 @@ PR validation blocks edits to already-committed versioned migrations.
 |---|---|---|
 | `{{ git_repository }}` | SP DDL `IMPORTS` | Snowflake Git Repository object |
 | `{{ git_branch }}` | SP DDL `IMPORTS` | `dev` or `main` branch path |
-| `{{ grant_role }}` | `snowflake/grants/` | Layer role from config (RAW / TRANSFORM / CONSUMPTION) |
-| `{{ grant_roles.RAW }}` | Grants (optional) | Explicit layer role |
+| `{{ grant_role }}` | `snowflake/grants/` | Default RW access role for current layer + schema |
+| `{{ access_roles.RW }}` | Grants | Read-write access role |
+| `{{ access_roles.RO }}` | Grants | Read-only access role |
+| `{{ access_roles.ALL }}` | Grants | Full access role |
 | `{{ environment }}` | Any (optional) | `DEV` or `PROD` |
 | `{{ databases.RAW }}` | `views/`, `dynamic_tables/` | Cross-layer DB: `DEV_RAW` / `PROD_RAW` |
 | `{{ databases.TRANSFORM }}` | `views/`, `dynamic_tables/` | Cross-layer DB: `DEV_TRANSFORM` / `PROD_TRANSFORM` |
@@ -443,7 +452,7 @@ The pipeline validates automatically:
 | Duplicate versions | No two files share the same version number |
 | Immutable migrations | No changes to existing `V*.sql` in the PR |
 | Hardcoded database refs | No `DEV_RAW` / `PROD_RAW` in views or dynamic_tables |
-| Grant roles config | `grant_roles` defined for DEV/PROD when grant scripts exist |
+| Access roles config | `access_roles` layer/schema mapping when grant scripts exist |
 
 Run locally before pushing:
 
