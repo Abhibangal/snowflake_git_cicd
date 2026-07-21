@@ -102,6 +102,7 @@ It checks:
 - No edits to already-deployed versioned migrations
 - `access_roles` configuration when grant scripts exist
 - No hardcoded `DEV_RAW` / `PROD_RAW` in views or dynamic tables (use `{{ databases.RAW }}`)
+- No hardcoded `WH_DEV_*` / `WH_PROD_*` in dynamic tables or tasks (use `{{ warehouses.ELT }}`)
 
 This step does **not** connect to Snowflake. It blocks bad changes before merge.
 
@@ -196,6 +197,18 @@ access_roles:
     UTILS: SDT
 ```
 
+Warehouses for dynamic tables and tasks are configured separately:
+
+```yaml
+warehouses:
+  DEVELOPER:
+    DEV: WH_DEV_DEVELOPER_XS
+    PROD: WH_PROD_DEVELOPER_XS
+  ELT:
+    DEV: WH_DEV_ELT_XS
+    PROD: WH_PROD_ELT_XS
+```
+
 | Privilege | Meaning |
 |---|---|
 | `ALL` | Full access to schema |
@@ -217,6 +230,28 @@ SchemaChange injects these variables at deploy time:
 | `{{ databases.RAW }}` | Resolves to `DEV_RAW` or `PROD_RAW` — use in **views / dynamic tables** |
 | `{{ databases.TRANSFORM }}` | Resolves to `DEV_TRANSFORM` or `PROD_TRANSFORM` |
 | `{{ databases.CONSUMPTION }}` | Resolves to `DEV_CONSUMPTION` or `PROD_CONSUMPTION` |
+| `{{ warehouses.DEVELOPER }}` | Resolves to `WH_DEV_DEVELOPER_XS` or `WH_PROD_DEVELOPER_XS` — use in **dynamic tables / tasks** |
+| `{{ warehouses.ELT }}` | Resolves to `WH_DEV_ELT_XS` or `WH_PROD_ELT_XS` — use in **dynamic tables / tasks** |
+
+Example dynamic table:
+
+```sql
+CREATE OR REPLACE DYNAMIC TABLE DT_CUSTOMER_ORDERS
+  TARGET_LAG = '1 hour'
+  WAREHOUSE = {{ warehouses.ELT }}
+AS
+SELECT * FROM {{ databases.RAW }}.HUBSPOT.ORDERS;
+```
+
+Example task:
+
+```sql
+CREATE OR REPLACE TASK TASK_REFRESH_ORDERS
+  WAREHOUSE = {{ warehouses.ELT }}
+  SCHEDULE = 'USING CRON 0 * * * * UTC'
+AS
+  CALL SOME_PROC();
+```
 
 Example cross-layer view:
 

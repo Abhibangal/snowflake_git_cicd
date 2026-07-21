@@ -81,6 +81,24 @@ database_layers:
   - CONSUMPTION
 
 # ==========================================================
+# Warehouses (Jinja variables for dynamic_tables / tasks)
+# Resolves at deploy time:
+#   {{ warehouses.DEVELOPER }} -> WH_DEV_DEVELOPER_XS on dev, WH_PROD_DEVELOPER_XS on main
+#   {{ warehouses.ELT }}       -> WH_DEV_ELT_XS on dev, WH_PROD_ELT_XS on main
+# Use in WAREHOUSE = clauses inside dynamic table and task DDL.
+# ==========================================================
+
+warehouses:
+
+  DEVELOPER:
+    DEV: WH_DEV_DEVELOPER_XS
+    PROD: WH_PROD_DEVELOPER_XS
+
+  ELT:
+    DEV: WH_DEV_ELT_XS
+    PROD: WH_PROD_ELT_XS
+
+# ==========================================================
 # Access roles (Jinja variables for snowflake/grants/**/*.sql)
 # Pattern: AR_{ENV}_{LAYER}_{SCHEMA}_{PRIVILEGE}
 #   ENV:        DEV / PROD (from branch)
