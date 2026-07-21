@@ -12,7 +12,12 @@ import subprocess
 import sys
 from pathlib import Path
 
-from deployment.core.jinja_vars import build_databases, get_database_layers
+from deployment.core.jinja_vars import (
+    build_access_roles_for_target,
+    build_databases,
+    default_grant_privilege,
+    get_database_layers,
+)
 from deployment.core.schema_discovery import SchemaDiscovery
 
 
@@ -157,27 +162,34 @@ class SchemaChangeRunner:
 
         return branch_map[self.environment]
 
-    def _schemachange_vars(self, database_layer=None) -> dict:
+    def _schemachange_vars(self, database_layer=None, schema=None) -> dict:
         git_config = self.deployment_config.get("git", {})
-        grant_roles_by_env = self.deployment_config.get("grant_roles", {})
-
-        if self.environment not in grant_roles_by_env:
-            grant_roles = {}
-        else:
-            grant_roles = grant_roles_by_env[self.environment]
-
-        layer = database_layer.upper() if database_layer else None
-        grant_role = grant_roles.get(layer, "") if layer else ""
 
         database_layers = get_database_layers(self.deployment_config)
         databases = build_databases(self.environment, database_layers)
+
+        access_roles = {}
+        grant_role = ""
+        access_role = ""
+
+        if database_layer and schema:
+            access_roles = build_access_roles_for_target(
+                self.environment,
+                database_layer,
+                schema,
+                self.deployment_config,
+            )
+            default_privilege = default_grant_privilege(self.deployment_config)
+            grant_role = access_roles[default_privilege]
+            access_role = grant_role
 
         return {
             "git_repository": git_config["repository_name"],
             "git_branch": self._git_branch(),
             "environment": self.environment,
-            "grant_roles": grant_roles,
             "grant_role": grant_role,
+            "access_role": access_role,
+            "access_roles": access_roles,
             "databases": databases,
         }
 
@@ -251,7 +263,7 @@ class SchemaChangeRunner:
         schemachange_settings = self.deployment_config["schemachange"]
         snowflake_settings = self.deployment_config["snowflake"]
 
-        schemachange_vars = self._schemachange_vars(database_layer)
+        schemachange_vars = self._schemachange_vars(database_layer, schema)
 
         command = [
             _schemachange_executable(),
@@ -281,6 +293,7 @@ class SchemaChangeRunner:
             f"git_repository={schemachange_vars['git_repository']}, "
             f"environment={schemachange_vars['environment']}, "
             f"grant_role={schemachange_vars['grant_role']}, "
+            f"access_roles={schemachange_vars['access_roles']}, "
             f"databases={schemachange_vars['databases']}"
         )
 
